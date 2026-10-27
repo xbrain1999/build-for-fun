@@ -1,20 +1,18 @@
-<div align="center">
-<img width="1200" height="475" alt="GHBanner" src="https://github.com/user-attachments/assets/0aa67016-6eaf-458a-adb2-6e31a0763ed6" />
-</div>
+# 师宗县教体局膳食改善监管舱
 
-# Run and deploy your AI Studio app
+师宗县中小学食堂阳光供货与膳食经费监管平台的前端预览。默认打开「小学 · 自费餐 · 本月」迎检口径，可切换学段、餐别和时间，并从指标、地图、排行榜和供应商穿透到督办抽屉与凭证弹窗。
 
-This contains everything you need to run your app locally.
+## 本地预览
 
-View your app in AI Studio: https://ai.studio/apps/drive/1kQWUGGNTviYCMoCg8jD8CWnAf-UJl1dd
+```bash
+npm install
+npm run dev
+```
 
-## Run Locally
+浏览器打开 Vite 提示的本地地址（默认 `http://localhost:3000`）。页面按 1920×1080 监管舱排版，窄屏会改为纵向滚动。
 
-**Prerequisites:**  Node.js
+## 可以点什么
 
-
-1. Install dependencies:
-   `npm install`
-2. Set the `GEMINI_API_KEY` in [.env.local](.env.local) to your Gemini API key
-3. Run the app:
-   `npm run dev`
+- 顶栏「迎检演示模式」：隐藏采购单价，并每 15 秒轮播乡镇与优秀学校。
+- 顶栏「生成迎检简报」：弹出 2026 年 10 月运行简报，可下载长图。
+- 六张闭环卡片、左侧红牌数字、地图圆点、右侧红黑榜、供应商条：打开右侧抽屉；批次可再打开凭证。

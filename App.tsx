@@ -1,109 +1,186 @@
-import React, { useState, useCallback } from 'react';
-import InputForm from './components/InputForm';
-import ItineraryResult from './components/ItineraryResult';
-import LoadingState from './components/LoadingState';
-import { generateItinerary } from './services/geminiService';
-import { FormData, ItineraryResponse, Language } from './types';
-import { AlertCircle } from 'lucide-react';
+import { useEffect, useMemo, useState } from "react";
+import AlertColumn from "./components/AlertColumn";
+import BriefingModal from "./components/BriefingModal";
+import CountyMap from "./components/CountyMap";
+import FunnelRow from "./components/FunnelRow";
+import HeaderBar from "./components/HeaderBar";
+import RankColumn from "./components/RankColumn";
+import SideDrawer, { superviseStamp } from "./components/SideDrawer";
+import VoucherModal from "./components/VoucherModal";
+import { formatWan } from "./constants";
+import {
+  alertLists,
+  buildFunnel,
+  featuredSchool,
+  rankRows,
+  schoolsForStage,
+  supplierRows,
+  TOWN_ORDER,
+  trendSeries,
+} from "./services/metrics";
+import type { DrawerState, Filters, ModalState } from "./types";
 
-const App: React.FC = () => {
-  const [language, setLanguage] = useState<Language>('en');
-  const [formData, setFormData] = useState<FormData | null>(null);
-  const [itinerary, setItinerary] = useState<ItineraryResponse | null>(null);
-  const [loading, setLoading] = useState<boolean>(false);
-  const [error, setError] = useState<string | null>(null);
-  const [rejectedPlaces, setRejectedPlaces] = useState<string[]>([]);
+const DEFAULT_FILTERS: Filters = { stage: "primary", meal: "self", range: "month" };
 
-  const handleFormSubmit = useCallback(async (data: FormData) => {
-    setLoading(true);
-    setError(null);
-    setFormData(data); // Save for rerolls
-    try {
-      const result = await generateItinerary(data, language, []);
-      setItinerary(result);
-    } catch (err) {
-      console.error(err);
-      setError("Oops! The AI got distracted by a butterfly. Please try again.");
-    } finally {
-      setLoading(false);
-    }
-  }, [language]);
+function downloadCsv(filename: string, rows: string[][]) {
+  const csv = rows.map((row) => row.map((cell) => `"${String(cell).replace(/"/g, '""')}"`).join(",")).join("\n");
+  const blob = new Blob([`\ufeff${csv}`], { type: "text/csv;charset=utf-8" });
+  const link = document.createElement("a");
+  link.href = URL.createObjectURL(blob);
+  link.download = filename;
+  link.click();
+  URL.revokeObjectURL(link.href);
+}
 
-  const handleReroll = useCallback(async () => {
-    if (!formData || !itinerary) return;
+export default function App() {
+  const [filters, setFilters] = useState<Filters>(DEFAULT_FILTERS);
+  const [inspection, setInspection] = useState(false);
+  const [drawer, setDrawer] = useState<DrawerState | null>(null);
+  const [modal, setModal] = useState<ModalState | null>(null);
+  const [supervised, setSupervised] = useState<Record<string, string>>({});
+  const [urged, setUrged] = useState<Record<string, string>>({});
+  const [reassigned, setReassigned] = useState(false);
+  const [marks, setMarks] = useState<Record<string, "pass" | "rectify">>({});
+  const [toast, setToast] = useState<string | null>(null);
+  const [townIndex, setTownIndex] = useState(0);
+  const [pinnedTown, setPinnedTown] = useState<string | null>(null);
 
-    setLoading(true);
-    const newRejected = [...rejectedPlaces, itinerary.mainActivity.name];
-    setRejectedPlaces(newRejected);
+  const funnel = useMemo(() => buildFunnel(filters), [filters]);
+  const alerts = useMemo(() => alertLists(filters), [filters]);
+  const ranked = useMemo(() => rankRows(filters), [filters]);
+  const trend = useMemo(() => trendSeries(filters), [filters]);
+  const suppliers = useMemo(() => supplierRows(filters), [filters]);
+  const visibleSchools = useMemo(() => schoolsForStage(filters), [filters]);
+  const highlightTown = inspection ? TOWN_ORDER[townIndex] : pinnedTown;
+  const featured = highlightTown ? featuredSchool(highlightTown, filters) : null;
 
-    try {
-      const result = await generateItinerary(formData, language, newRejected);
-      setItinerary(result);
-    } catch (err) {
-      console.error(err);
-      setError("Could not find another plan. Maybe the first one was destiny?");
-    } finally {
-      setLoading(false);
-    }
-  }, [formData, itinerary, language, rejectedPlaces]);
+  useEffect(() => {
+    if (!inspection || drawer || modal) return;
+    const timer = window.setInterval(() => {
+      setTownIndex((index) => (index + 1) % TOWN_ORDER.length);
+    }, 15000);
+    return () => window.clearInterval(timer);
+  }, [inspection, drawer, modal]);
 
-  const handleReset = useCallback(() => {
-    setItinerary(null);
-    setError(null);
-    setRejectedPlaces([]);
-    // We don't clear formData so user doesn't have to re-type if they go back
-  }, []);
+  useEffect(() => {
+    if (!toast) return;
+    const timer = window.setTimeout(() => setToast(null), 2800);
+    return () => window.clearTimeout(timer);
+  }, [toast]);
+
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      if (modal) setModal(null);
+      else setDrawer(null);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [modal]);
+
+  function supervise(ids: string[]) {
+    const stamp = superviseStamp();
+    setSupervised((current) => {
+      const next = { ...current };
+      ids.forEach((id) => { next[id] = stamp; });
+      return next;
+    });
+    setToast(`已向 ${ids.length} 所学校校长及库管员发送督办提醒`);
+  }
 
   return (
-    <div className="min-h-screen bg-slate-50 flex items-center justify-center p-4 font-sans">
-      <div className="w-full max-w-lg">
-        
-        {/* Error Notification */}
-        {error && (
-          <div className="mb-6 p-4 bg-red-50 border border-red-100 rounded-xl flex items-center text-red-600 animate-in fade-in slide-in-from-top-2">
-            <AlertCircle className="w-5 h-5 mr-3 flex-shrink-0" />
-            <p className="text-sm font-medium">{error}</p>
-            <button 
-              onClick={() => setError(null)} 
-              className="ml-auto text-xs font-bold underline hover:text-red-800"
-            >
-              Dismiss
-            </button>
-          </div>
-        )}
-
-        {/* Content Switching */}
-        {loading ? (
-          <LoadingState language={language} />
-        ) : itinerary ? (
-          <ItineraryResult 
-            data={itinerary} 
-            onReset={handleReset} 
-            onReroll={handleReroll}
-            language={language}
-            isRerolling={loading}
-          />
-        ) : (
-          <InputForm 
-            onSubmit={handleFormSubmit} 
-            isLoading={loading} 
-            language={language}
-            onLanguageChange={setLanguage}
-          />
-        )}
-
-        {/* Footer */}
-        {!loading && (
-          <div className="mt-8 text-center">
-            <p className="text-[10px] text-slate-400 font-medium">
-              Powered by Gemini • {language === 'en' ? "Built for tired parents" : "为疲惫的父母而生"}
-            </p>
-          </div>
-        )}
-
+    <div className="cabin">
+      <HeaderBar
+        filters={filters}
+        inspection={inspection}
+        onChange={setFilters}
+        onToggleInspection={() => {
+          setInspection((value) => !value);
+          setTownIndex(0);
+        }}
+        onBriefing={() => setModal({ kind: "briefing" })}
+      />
+      <FunnelRow
+        filters={filters}
+        funnel={funnel}
+        onOpen={(key) => setDrawer({ kind: key })}
+      />
+      <div className="board">
+        <AlertColumn
+          alerts={{ missing: alerts.missing.length, overdue: alerts.overdue.length, rest: alerts.rest.length }}
+          safety={{ photoRate: 99.2, pesticideRate: 100, ticketRate: 100 }}
+          suppliers={suppliers.map((row) => ({
+            ...row,
+            urged: Boolean(urged[row.supplier.id]),
+            reassigned: reassigned && row.supplier.id === "youyuan",
+          }))}
+          onAlert={(kind) => setDrawer({ kind })}
+          onSafety={() => setDrawer({ kind: "safety" })}
+          onSupplier={(supplierId) => setDrawer({ kind: "supplier", supplierId })}
+        />
+        <CountyMap
+          schools={visibleSchools}
+          filters={filters}
+          highlightTown={highlightTown}
+          featured={featured}
+          inspection={inspection}
+          onSchool={(schoolId) => setDrawer({ kind: "school", schoolId, tab: "batches" })}
+          onTown={setPinnedTown}
+        />
+        <RankColumn
+          rows={ranked}
+          trend={trend}
+          match={funnel.match}
+          turnoverLabel={formatWan(funnel.turnover)}
+          onSchool={(schoolId) => setDrawer({ kind: "school", schoolId, tab: "batches" })}
+        />
       </div>
+
+      {drawer && (
+        <SideDrawer
+          drawer={drawer}
+          filters={filters}
+          inspection={inspection}
+          supervised={supervised}
+          urged={urged}
+          reassigned={reassigned}
+          marks={marks}
+          onClose={() => setDrawer(null)}
+          onSupervise={supervise}
+          onExport={(rows) => {
+            downloadCsv("师宗县异常通报单.csv", rows);
+            setToast("已导出异常通报单");
+          }}
+          onUrge={(id) => {
+            setUrged((current) => ({ ...current, [id]: superviseStamp() }));
+            setToast("已要求供应商 1 小时内上传备货出车凭证");
+          }}
+          onReassign={() => {
+            setReassigned(true);
+            setToast("五龙、龙庆、彩云片区缺货订单已临时切给师宗粮油和君达贸易");
+          }}
+          onOpenSchool={(schoolId) => setDrawer({ kind: "school", schoolId, tab: "batches" })}
+          onOpenVoucher={(schoolId, batchId) => setModal({ kind: "voucher", schoolId, batchId })}
+        />
+      )}
+
+      {modal?.kind === "voucher" && (
+        <VoucherModal
+          schoolId={modal.schoolId}
+          batchId={modal.batchId}
+          inspection={inspection}
+          marked={marks[modal.schoolId]}
+          onClose={() => setModal(null)}
+          onMark={(schoolId, mark) => {
+            setMarks((current) => ({ ...current, [schoolId]: mark }));
+            setToast(mark === "pass" ? "已标记为迎检抽查合格" : "已发起票货不符整改单");
+          }}
+        />
+      )}
+      {modal?.kind === "briefing" && (
+        <BriefingModal funnel={funnel} onClose={() => setModal(null)} />
+      )}
+      {toast && <div className="toast" role="status">{toast}</div>}
     </div>
   );
-};
-
-export default App;
+}
